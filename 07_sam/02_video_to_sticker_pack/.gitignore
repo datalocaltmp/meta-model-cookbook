@@ -1,0 +1,10 @@
+.venv/
+.env
+node_modules/
+output/
+*.m4v
+*.mov
+*.mp4
+!assets/*.m4v
+!assets/*.mov
+!assets/*.mp4

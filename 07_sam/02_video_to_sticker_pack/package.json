@@ -1,0 +1,12 @@
+{
+  "name": "sam-video-to-sticker-pack",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.17.0 || >=22.9.0"
+  },
+  "dependencies": {
+    "@meta-sam/parser": "^0.0.10"
+  }
+}
