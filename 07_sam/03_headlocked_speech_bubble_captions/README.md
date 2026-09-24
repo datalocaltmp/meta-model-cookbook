@@ -2,7 +2,7 @@
 
 |  |  |
 |---|---|
-| **Section** | [SAM 3](../) |
+| **Section** | [Segment Anything Model](https://dev.meta.ai/docs/cookbook/sam) |
 | **Docs** | [Media segmentation](https://dev.meta.ai/docs/media-segmentation) · [Reading segmentation output](https://dev.meta.ai/docs/sam/reading-segmentation) · [Speech to text](https://dev.meta.ai/docs/speech-to-text) |
 | **Time to complete** | ~20 min |
 | **Models** | `sam-3.1`, `muse-voice-transcribe-1.0` |
