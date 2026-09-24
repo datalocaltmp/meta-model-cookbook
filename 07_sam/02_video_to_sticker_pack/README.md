@@ -2,7 +2,7 @@
 
 |                      |                                                               |
 | -------------------- | ------------------------------------------------------------- |
-| **Section**          | [SAM 3](../)                                                  |
+| **Section**          | [Segment Anything Model](https://dev.meta.ai/docs/cookbook/sam) |
 | **Docs**             | [Media segmentation](https://dev.meta.ai/docs/media-segmentation) · [Reading segmentation output](https://dev.meta.ai/docs/sam/reading-segmentation) · [Client libraries](https://dev.meta.ai/docs/sam/client-libraries) |
 | **Time to complete** | ~15 min                                                       |
 | **Model**            | `sam-3.1`                                               |

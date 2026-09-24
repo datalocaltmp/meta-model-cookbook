@@ -1,6 +1,6 @@
 # Segment Anything Model 3 (SAM 3)
 
-Maps to the **SAM 3** section of the [Cookbook page](https://dev.meta.ai/docs/cookbook#sam-3).
+Maps to the [Segment Anything Model](https://dev.meta.ai/docs/cookbook/sam) section of the Cookbook.
 Recipes for building with [SAM 3](https://dev.meta.ai/docs/sam/overview), the
 segmentation model on the Meta Model API. You name what you want in a short noun
 phrase and the model returns pixel masks for every match, holding each object's
