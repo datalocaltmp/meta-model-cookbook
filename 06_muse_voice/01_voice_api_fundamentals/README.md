@@ -2,7 +2,7 @@
 
 |  |  |
 |---|---|
-| **Section** | [Muse Voice Transcribe](../) |
+| **Section** | [Muse Voice Transcribe](https://dev.meta.ai/docs/cookbook/muse-voice-transcribe) |
 | **Docs** | [Speech to text](https://dev.meta.ai/docs/speech-to-text) · [API reference](https://dev.meta.ai/docs/api-reference/voice) |
 | **Time to complete** | ~10 min |
 | **Model** | `muse-voice-transcribe-1.0` |
