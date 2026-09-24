@@ -44,15 +44,18 @@ A denied, timed-out, or failed approval sends nothing. The tool's arguments carr
 
 ## Before you start
 
-You need a working [Hermes](https://hermes-agent.nousresearch.com/) install and its config directory, which this recipe calls `$HERMES_HOME` (`~/.hermes` by default):
+You need a working [Hermes](https://hermes-agent.nousresearch.com/) install. This recipe calls its config directory `$HERMES_HOME`. Ask Hermes where its files are instead of assuming `~/.hermes`:
 
 ```bash
 hermes --version
-export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-ls "$HERMES_HOME/config.yaml"
+hermes config path       # config.yaml
+hermes config env-path   # .env, where secrets live
+export HERMES_HOME="$(dirname "$(hermes config path)")"
 ```
 
-Get a Meta Model API key from [dev.meta.ai](https://dev.meta.ai/). You don't need to export it: installing the plugin prompts for it with hidden input and saves it to `$HERMES_HOME/.env`, so it never lands in `config.yaml` or source.
+If Hermes runs in a container, run every `hermes` command in this recipe inside it, for example `docker exec <container> hermes config path`. `$HERMES_HOME` is then the host directory mounted at that path. Edit files there as the directory's owner, so Hermes can still read and update them.
+
+Get a Meta Model API key from [dev.meta.ai](https://dev.meta.ai/). You don't need to export it. The install step stores it in Hermes' `.env`, so it never lands in `config.yaml` or source.
 
 Clone this repo for the config fragment and the tests:
 
@@ -143,7 +146,7 @@ hermes plugins install \
   --enable
 ```
 
-The installer fetches only the `remote-model` folder and names it from the manifest. The manifest declares `MODEL_API_KEY` under `requires_env`, so the installer asks for the key if it isn't set, and Hermes keeps the plugin disabled with a clear message if the key is ever missing. Plugins are opt-in; `--enable` adds this one to `plugins.enabled` in `config.yaml`.
+The installer fetches only the `remote-model` folder and names it from the manifest. The manifest declares `MODEL_API_KEY` under `requires_env`, so the installer asks for the key with hidden input if it isn't set. If the key goes missing later, the tool refuses each call before it shows an approval prompt. Plugins are opt-in; `--enable` adds this one to `plugins.enabled` in `config.yaml`.
 
 To install from your clone instead, copy the folder and enable it. Decline the tool-override grant; the plugin adds a tool and doesn't replace any:
 
@@ -152,7 +155,9 @@ cp -r remote-model "$HERMES_HOME/plugins/"
 hermes plugins enable remote-model --no-allow-tool-override
 ```
 
-With a manual copy, put the key in `$HERMES_HOME/.env` yourself as `MODEL_API_KEY=...`.
+A manual copy skips the installer, so nothing asks for the key. Add `MODEL_API_KEY=...` to the file `hermes config env-path` prints, with an editor rather than a command line, so the key stays out of your shell history.
+
+In a container, copy the folder on the host into the mounted directory as its owner, or with `docker exec --user <uid>:<gid>` as the user that runs Hermes. Then check the owner of the copied files.
 
 The plugin calls Muse Spark over the Responses API with the OpenAI SDK, which Hermes already ships. The base URL, model, and key come from the environment:
 
@@ -203,10 +208,11 @@ The full plugin is in [`remote-model/__init__.py`](remote-model/__init__.py).
 
 ### Check it loaded
 
-The plugin loads on the next session. Confirm it's enabled and its toolset is on:
+A new CLI session picks up the plugin. A running gateway doesn't: after you install the plugin, enable it, or change its key, restart the gateway with `hermes gateway restart` or your service manager. Then confirm it's enabled, valid, and its toolset is on:
 
 ```bash
 hermes plugins list
+hermes plugins doctor --ci remote-model
 hermes tools list | grep remote
 ```
 
@@ -406,11 +412,12 @@ On Android, speech in and out are platform classes and need no dependencies: `Sp
 The tests exercise the approval flow and the handler with stand-ins for Hermes' gate and the API client, so they need no network, no key, and no Hermes install:
 
 ```bash
-pip install -r requirements.txt
-pytest tests
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/pytest tests
 ```
 
-They check that the approved text is the sent text, that nothing is sent before the gate answers, that approvals are scoped to one text, that a denial invites a rewrite while a timeout doesn't, and that the ledger never records content.
+They check that the approved text is the sent text, that nothing is sent before the gate answers, that approvals are scoped to one text, that a denial invites a rewrite while a timeout doesn't, that a missing key never reaches the prompt, and that the ledger never records content.
 
 ## Next steps
 

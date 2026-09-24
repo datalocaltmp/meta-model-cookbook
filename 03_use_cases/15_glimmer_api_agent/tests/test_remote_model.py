@@ -24,6 +24,7 @@ def plugin(tmp_path, monkeypatch):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "LEDGER", str(tmp_path / "egress.jsonl"))
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
     return module
 
 
@@ -216,9 +217,12 @@ def test_handler_reports_a_remote_failure(plugin, gate, monkeypatch):
     assert "a distinctive question" not in Path(plugin.LEDGER).read_text()
 
 
-def test_missing_key_fails_closed(plugin, gate, monkeypatch):
+def test_a_missing_key_never_reaches_the_gate(plugin, gate, client, monkeypatch):
     monkeypatch.delenv("MODEL_API_KEY", raising=False)
-    assert call(plugin, "q?")["success"] is False
+    result = call(plugin, "q?")
+    assert result["success"] is False
+    assert "MODEL_API_KEY" in result["error"]
+    assert gate.prompts == [] and client.calls == []
 
 
 # Registration

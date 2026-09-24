@@ -115,6 +115,13 @@ def _handler(args, **_kw):
     question = args.get("question")
     if not isinstance(question, str) or not question.strip():
         return json.dumps({"success": False, "error": f"{TOOL} needs a question."})
+    # Check the key before the prompt, so nobody approves text that can't be sent.
+    if not os.environ.get("MODEL_API_KEY"):
+        return json.dumps({
+            "success": False,
+            "error": "Nothing was sent: MODEL_API_KEY is not set. Add it to the file "
+            "`hermes config env-path` prints, then restart Hermes.",
+        })
 
     try:
         verdict = _ask_gate(question, args.get("reason"))
