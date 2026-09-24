@@ -61,7 +61,7 @@ class _TraceImageWriter:
             return None
         if not raw:
             return None
-        digest = hashlib.sha1(raw).hexdigest()[:16]
+        digest = hashlib.sha256(raw).hexdigest()[:16]
         relpath = self._by_hash.get(digest)
         if relpath is None:
             name = f"{digest}{_image_extension(prefix)}"

@@ -40,7 +40,8 @@ def test_image_writer_saves_sidecar_and_dedupes(tmp_path):
     assert writer.saved_count == 1
 
     # Undecodable payloads fall back to redaction (None).
-    assert writer.save("data:image/png;base64", "not*base64*") is None or writer.saved_count == 1
+    assert writer.save("data:image/png;base64", "not*base64*") is None
+    assert writer.saved_count == 1
 
 
 def test_sanitized_json_extracts_nested_images(tmp_path):
