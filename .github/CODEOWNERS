@@ -1,0 +1,10 @@
+# Cookbook maintainers.
+#
+# GitHub requests a review from every owner matching a changed path. Branch
+# protection on `main` requires one approval, so any one of them can unblock
+# a pull request.
+#
+# Entries only take effect for accounts with write access to this repository;
+# GitHub silently ignores the rest.
+
+*       @connortreacy @albertodepaola @AlirezaShamsoshoara
