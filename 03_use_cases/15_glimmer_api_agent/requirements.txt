@@ -1,0 +1,4 @@
+# Hermes already ships the OpenAI SDK, so the plugin needs nothing extra at runtime.
+# These are for running the tests outside Hermes.
+openai>=2.0
+pytest>=8.0
