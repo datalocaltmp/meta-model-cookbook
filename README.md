@@ -138,6 +138,16 @@ these recipes use a WebSocket client rather than the OpenAI SDK.
 | 01 | [Speech to text](06_muse_voice/01_voice_api_fundamentals/) | Transcribe a recording or a live microphone over the streaming WebSocket, get speaker-attributed turns with diarization, or post a whole recording in one HTTP request. |
 | 02 | [Voice-controlled Apple Chess](06_muse_voice/02_voice_chess_cua/) | Turn exact spoken chess moves into locally validated Apple Chess actions with a passive HUD, calibrated grid, dry-run mode, and fail-closed native input. |
 
+### [7. SAM 3](07_sam/)
+
+Turn segmentation masks and video tracks into finished applications.
+
+| # | Recipe | What it does |
+|---|---|---|
+| 01 | [SAM API basics](07_sam/01_api_basics/) | Segment images and videos in Python or TypeScript with the official `meta-sam` parsers. |
+| 02 | [Video to animated sticker pack](07_sam/02_video_to_sticker_pack/) | Track an animal through a video and export transparent, messaging-ready animated stickers. |
+| 03 | [Multi-speaker headlocked captions](07_sam/03_headlocked_speech_bubble_captions/) | Upload a conversation, map diarized voices to SAM-tracked people, and download the captioned video. |
+
 ## License
 
 See [LICENSE](LICENSE) for details.

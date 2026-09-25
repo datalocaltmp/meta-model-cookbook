@@ -1,0 +1,32 @@
+# Merge these keys into $HERMES_HOME/config.yaml (~/.hermes/config.yaml by default).
+# They make Muse Glimmer on your local runtime the default model and keep every
+# other key you already have.
+#
+# Replace the base URL and model ID with your runtime's. The base URL is the
+# server's OpenAI-compatible endpoint, and the model ID is what GET /v1/models
+# reports. Defaults: llama.cpp :8080/v1, vLLM :8000/v1, SGLang :30000/v1,
+# OpenVINO Model Server :<rest_port>/v3, Ollama :11434/v1, LM Studio :1234/v1.
+
+model:
+  default: muse-glimmer-30b
+  provider: custom:glimmer-local
+  base_url: http://localhost:8080/v1
+  api_key: local-only            # local servers ignore it; the client requires a value
+  api_mode: chat_completions
+  context_length: 65536
+
+custom_providers:
+  - name: glimmer-local
+    base_url: http://localhost:8080/v1
+    api_key: local-only
+    model: muse-glimmer-30b
+    api_mode: chat_completions
+    models:
+      muse-glimmer-30b:
+        context_length: 65536
+        vision: true               # image input reaches the model
+        tools: true                # the agent can call consult_remote_model
+
+# Keep this empty. A non-empty list lets a local failure become a cloud call
+# with no approval prompt, which defeats the gate.
+fallback_providers: []

@@ -1,0 +1,6 @@
+.env
+.venv/
+node_modules/
+output/
+*.py[cod]
+__pycache__/

@@ -34,7 +34,7 @@ final class TraceImageWriter {
     else {
       return nil
     }
-    let hex = Insecure.SHA1.hash(data: raw).map { String(format: "%02x", $0) }.joined()
+    let hex = SHA256.hash(data: raw).map { String(format: "%02x", $0) }.joined()
     let short = String(hex.prefix(16))
     let relpath: String
     if let existing = byHash[short] {

@@ -1,0 +1,12 @@
+name: remote-model
+version: 1.0.0
+description: >-
+  Ask Muse Spark on Meta Model API. Every call stops at Hermes' human-approval
+  gate first, and the exact outbound text is what the user sees.
+provides_tools:
+  - consult_remote_model
+requires_env:
+  - name: MODEL_API_KEY
+    description: "Meta Model API key"
+    url: "https://dev.meta.ai/"
+    secret: true
