@@ -1,9 +1,11 @@
 # Security research over MCP
 
+*Wiring Burp Suite, headless Ghidra and LLDB into Meta's terminal coding agent over MCP, then pointing it at a real vulnerable web server and a real CVE buried in a stripped binary.*
+
 |  |  |
 |---|---|
 | **Section** | [Muse Code](https://dev.meta.ai/docs/cookbook#building-with-muse-code) |
-| **Time to complete** | ~90 min |
+| **Time to complete** | ~20 min read, ~90 min to complete |
 | **Model** | `muse-spark-1.3-contributor` |
 | **Harness** | Muse Code 1.1.1 (the `muse` CLI) |
 
@@ -19,6 +21,29 @@ This recipe shows how to wire three security tools into Muse Code as MCP servers
 - [Part two](#part-two---native-binaries), Ghidra and LLDB. The agent gets a stripped binary and a file that crashes it, and works back to the root cause of a real CVE in a JPEG 2000 decoder. Also set up for you to run, and the upstream patch is public, so you can grade this one too.
 
 Neither bug is novel, and that’s rather the point; what the agent does is correlate, prove and document, which are the mechanical and attention-hungry parts of security work. Everything here was run end to end rather than transcribed from documentation.
+
+> [!CAUTION]
+> **Policy enforcement and account blocks**
+>
+> This is security research, so the prompts and tool calls here can trigger policy enforcement and temporarily block your Muse Code account. That’s expected for this recipe and is not a bug.
+>
+> If your account is blocked, you’ll receive a request ID in the session. To get unblocked:
+>
+> 1. Go to https://dev.meta.ai/support
+> 2. Submit a ticket using the **“Policy, Privacy, and Safety”** contact reason
+> 3. Include the term **cybersecurity** in the title
+> 4. Include the **request ID** you received in your session
+>
+> Example:
+>
+> ```
+> Title: cybersecurity - Muse Code account blocked during security research recipe
+> Request ID: <paste the request ID from your session>
+> ```
+>
+> ![Example support ticket for a policy block during cybersecurity research, showing the “Policy, Privacy, and Safety” reason selected, “cybersecurity” in the title, and the session request ID included.](assets/04_support_ticket_example.png)
+>
+> *Example support ticket. Use “Policy, Privacy, and Safety”, put “cybersecurity” in the title, and include your session request ID.*
 
 ## Setting Up Muse Code
 
@@ -234,7 +259,8 @@ Run this one interactively rather than through `muse exec`. Tool calls go throug
 
 ### Pointing It at a Real Target
 
-> **Warning · authorized targets only**
+> [!WARNING]
+> **Authorized targets only**
 >
 > The target here is [ginandjuice.shop](https://ginandjuice.shop), PortSwigger’s deliberately vulnerable demo site, published for exactly this purpose. Do not point any of this at a host you are not authorized to test.
 
