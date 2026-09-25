@@ -41,6 +41,8 @@ The installer puts the binary in `~/.local/bin` by default, so make sure that’
 
 ### Authenticate
 
+You need a Muse Code account before any of this works; sign-up and current pricing are on the [product page](https://developer.meta.com/ai/products/muse-code/).
+
 Run `muse` in any project directory. On first entry you’ll be asked whether to trust the workspace, and then offered either a browser sign-in or an API key.
 
 ```
