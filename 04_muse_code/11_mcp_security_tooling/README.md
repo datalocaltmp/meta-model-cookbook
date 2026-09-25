@@ -148,6 +148,8 @@ For a walkthrough like this one, switch the page on and get on with the work:
 
 *Everything enabled.*
 
+Expect dialogs even so. The always-allow toggles cover reads; outbound requests are governed separately by *Require approval for HTTP requests*, which stays on. To stop Burp prompting on every `send_http1_request`, add the target host to **Auto-Approved HTTP Targets** on the same page. On a demo target you can just answer the dialogs instead.
+
 #### Bridging SSE to stdio
 
 Burp speaks SSE, while Muse Code speaks `stdio` and `streamable_http`, and SSE is neither of those. Fortunately the extension ships a translator, `mcp-proxy-all.jar`, so the setup ends up being two separate processes:
@@ -216,12 +218,17 @@ Available MCP tools (1 server, 24 tools, not called):
 
 That single prompt catches the common failures at once: a server that didn’t start shows up as a startup warning and a missing group, a typo’d `transport` fails validation before the TUI appears, and a `required` server that’s down aborts the run outright.
 
-Then prove a call actually round-trips. `url_encode` is the safest possible choice here, since it touches no network and no state:
+Then prove a call actually round-trips. `url_encode` is the safest possible choice here, since it touches no network and no state. Ask for it in the same session:
+
+> **Prompt**
+>
+> Call the burp MCP tool url_encode on the exact string: a b&c=<d> Then report the raw value it returned, nothing else.
 
 ```
-$ muse exec --disable-approval "Call the burp MCP tool url_encode on the exact string: a b&c=<d>  Then report the raw value it returned, nothing else."
 a+b%26c%3D%3Cd%3E
 ```
+
+Run this one interactively rather than through `muse exec`. Tool calls go through the approval layer, and a headless run has no UI to answer the prompt with, so it will sit there.
 
 ### Pointing It at a Real Target
 
@@ -275,13 +282,15 @@ Rules:
 - Do not extract data. Demonstrate the flaw, don't exploit it.
 ```
 
-Then leave it alone and watch it work. The bug itself isn’t the interesting part — Gin & Juice is seeded with known bugs and publishes the list — the interesting part is the route there: which endpoints it decides are worth attention, which leads it kills, and whether what it finally claims arrives with a baseline, a break and a repair rather than one odd response.
+Then leave it alone and watch it work. Gin & Juice is seeded with known bugs and publishes the list, so the finding itself is not really the point. What is worth watching is which endpoints it decides are worth attention, which leads it kills, and whether what it finally claims arrives with a baseline, a break and a repair rather than one odd response.
 
 The run behind this recipe picked a single lead, confirmed it with that three-request pattern, and discarded two competing leads with a stated reason for each. Yours will differ in the details, since the model is non-deterministic and the history you seeded is your own. Grade it against the site’s own [/vulnerabilities](https://ginandjuice.shop/vulnerabilities) page, which is the answer key.
 
 ## Part Two - Native Binaries
 
 So far we’ve been hunting network-layer vulnerabilities. Now we’ll go a layer down, to native bugs: a stripped binary, a file that crashes it, and no source. Two more MCP servers, Ghidra for structure and LLDB for runtime values, pointed at a real CVE in a media decoder.
+
+This half needs a few things the web half didn’t: `cmake` and a C toolchain to build the target, `uv` for both MCP servers, and Rosetta to run an x86_64 binary on Apple Silicon. On MacOS that is `brew install cmake uv`, `xcode-select --install`, and `softwareupdate --install-rosetta`.
 
 ### Wiring Up Ghidra, Headless
 
@@ -331,7 +340,24 @@ And alongside it in the same block:
 
 ### Building Something Worth Analysing
 
-Toy crashers teach nothing, so the target here is CVE-2016-10506 in [OpenJPEG](https://github.com/uclouvain/openjpeg), the reference JPEG 2000 decoder. It’s a SIGFPE in the packet iterator, found by Ke Liu of Tencent’s Xuanwu Lab, and the original 436-byte proof-of-concept is still attached to the [public issue](https://github.com/uclouvain/openjpeg/issues/732), and reproduced in the [appendix](#appendix-the-proof-of-concept) as a one-liner that writes the `sample_crash_001.jp2` the build below feeds to the decoder.
+The target here is CVE-2016-10506 in [OpenJPEG](https://github.com/uclouvain/openjpeg), the reference JPEG 2000 decoder. It’s a SIGFPE in the packet iterator, found by Ke Liu of Tencent’s Xuanwu Lab, and the original 436-byte proof-of-concept is still attached to the [public issue](https://github.com/uclouvain/openjpeg/issues/732).
+
+You need that file before the build below can crash anything, so here it is inline. Run this from wherever you are building; it writes the `sample_crash_001.jp2` the decoder is fed:
+
+```
+base64 -d > sample_crash_001.jp2 <<'EOF'
+AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAAAtanAyaAAAABZpaGRyAAAAIAAAACAA
+AweHAAAAAAAPY29scgEAAAAAABAAAAFnanAyY/9P/1EALwAAAAAAAQAAACAAAAAAAAAAAIAAACAA
+AAAgAAAAAAAAAAAAAwcCAQcBAYoBAf9SAAwABAABAREEBIAB/1wABEBA/2QAJQABQ3JlYXRlZCBi
+eSBPcGVuSlBFRyB2ZXJzaWZ0eXAuMS4w/5AACgAAAAAA7wAB/5PfB1YANB/WzgwnT0scoB/vuZfg
+c1PvCOOcZjXu94sFdFbBplUpDNQKo/J/xlMus9LPf6OB3S2g7cWVduNF1Jaz7rIDsiUuZP97i6v6
+AKLEZkELDIYYc/9zmmka8yiifaZFEnVtgpHmcWvWIj909OzjqMTdl/xjGiEA30lKlsnQgHvkAAAA
+DCQlU8IGCRzPVltBDquXVV1SKEgCZ6AAAL//MDWwLWWTjY66dD2zcDL4QNwgyHZAed8ygGb/NYsD
+EkIdgqz2vhAr2q6hLHANUHiJLHTG3LUbzHETySr/f/9//3//2Q==
+EOF
+```
+
+You should end up with 436 bytes, `sha256 4a20941ada8ebf356abcd1b498d044cf2585a1c1c03e390c2638281e0967b2b1`. The header fields that drive the crash are all visible in it: `Scod=0`, `COD prog=4`, `levels=17`, `SIZ Csiz=3` and `XRsiz=2`.
 
 The plan is simple enough: check out an unpatched commit, build it, and reproduce the crash. Two build details matter.
 
@@ -371,13 +397,13 @@ $ echo $?
 136
 ```
 
-Stripping matters here. With `-g` and sources on disk, LLDB hands the agent `pi.c:526` on the first backtrace and there’s no reverse engineering left to do. Stripped and optimized, the symbol count drops from 736 to 55 and the fault reports as:
+This is why we strip it. With `-g` and sources on disk, LLDB hands the agent `pi.c:526` on the first backtrace and there’s no reverse engineering left to do. Stripped and optimized, the symbol count drops from 736 to 55 and the fault reports as:
 
 ```
 frame #0: 0x0000000100030f06 decoder`___lldb_unnamed_symbol_100030230 + 3286
 ```
 
-No name, no line, no source; now it’s a real problem.
+With no symbol name, no line number and no source to fall back on, the agent has to work it out from the binary itself.
 
 ### Verifying Both Servers
 
@@ -445,7 +471,7 @@ Rules:
 - Report what you could NOT determine, and why.
 ```
 
-Then let it work. As with the web half, the route matters more than the destination: watch how it moves between the two servers, whether it reads values out of the debugger rather than inferring them from the decompilation, and what it reports that it could *not* determine.
+Then let it work. As with the web half, watch how it moves between the two servers, whether it reads values out of the debugger rather than inferring them from the decompilation, and what it reports that it could *not* determine.
 
 The run behind this recipe set a breakpoint before the faulting shift, stepped a single instruction and read the register again rather than assuming the overflow; recovered the stripped function’s purpose from its decompilation; traced the fault back to specific fields in the 436-byte input; and proposed the same guard the upstream patch adds. It stopped at denial of service rather than claiming memory corruption. Yours will differ in the details. Grade it against the real fix in [d27ccf01](https://github.com/uclouvain/openjpeg/commit/d27ccf01c68a31ad62b33d2dc1ba2bb1eeaafe7b).
 
@@ -455,25 +481,6 @@ The run behind this recipe set a breakpoint before the faulting shift, stepped a
 - Package a recurring investigation as a [skill](https://dev.meta.ai/docs/muse-code/extending#skills), so "map this app’s attack surface" or "triage this crash" becomes one invocation with the rules already attached.
 - Split a large audit across parallel [subagents](https://dev.meta.ai/docs/muse-code/extending#multi-agent), one endpoint or one binary each.
 - Run a triage pass in CI with [`muse exec`](https://dev.meta.ai/docs/muse-code/extending#headless), remembering that its exit code reports how the run ended rather than whether the finding is real, so gate on your own checks.
-
-## Appendix: The Proof-of-Concept
-
-Rather than send you off to the issue tracker, here is the original 436-byte file inline. Run this from wherever you built the decoder; it writes the `sample_crash_001.jp2` the build feeds in:
-
-```
-base64 -d > sample_crash_001.jp2 <<'EOF'
-AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAAAtanAyaAAAABZpaGRyAAAAIAAAACAA
-AweHAAAAAAAPY29scgEAAAAAABAAAAFnanAyY/9P/1EALwAAAAAAAQAAACAAAAAAAAAAAIAAACAA
-AAAgAAAAAAAAAAAAAwcCAQcBAYoBAf9SAAwABAABAREEBIAB/1wABEBA/2QAJQABQ3JlYXRlZCBi
-eSBPcGVuSlBFRyB2ZXJzaWZ0eXAuMS4w/5AACgAAAAAA7wAB/5PfB1YANB/WzgwnT0scoB/vuZfg
-c1PvCOOcZjXu94sFdFbBplUpDNQKo/J/xlMus9LPf6OB3S2g7cWVduNF1Jaz7rIDsiUuZP97i6v6
-AKLEZkELDIYYc/9zmmka8yiifaZFEnVtgpHmcWvWIj909OzjqMTdl/xjGiEA30lKlsnQgHvkAAAA
-DCQlU8IGCRzPVltBDquXVV1SKEgCZ6AAAL//MDWwLWWTjY66dD2zcDL4QNwgyHZAed8ygGb/NYsD
-EkIdgqz2vhAr2q6hLHANUHiJLHTG3LUbzHETySr/f/9//3//2Q==
-EOF
-```
-
-You should end up with 436 bytes, `sha256 4a20941ada8ebf356abcd1b498d044cf2585a1c1c03e390c2638281e0967b2b1`. The header fields that drive the crash are all visible in it: `Scod=0`, `COD prog=4`, `levels=17`, `SIZ Csiz=3` and `XRsiz=2`.
 
 ## License
 
