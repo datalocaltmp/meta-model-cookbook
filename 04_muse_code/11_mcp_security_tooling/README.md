@@ -11,16 +11,16 @@
 
 ## Summary
 
-Muse Code is Meta’s terminal coding agent. It reads code, edits files, and runs shell commands inside an OS sandbox. It does not know how to drive a web proxy, decompile a binary, or debug a process. That is where the Model Context Protocol comes in.
+Muse Code is Meta’s terminal coding agent. It reads code, edits files, and runs shell commands inside an OS sandbox. It does not know how to drive a web proxy, decompile a binary, or debug a process - that is where the Model Context Protocol comes in.
 
-An MCP server exposes a set of named, typed tools. Wiring Burp in does not give the model a shell inside Burp. It gives it twenty-four functions, for example `get_proxy_http_history` and `send_http1_request`.
+An MCP server exposes a set of named, typed tools. Wiring Burp in does not give the model a shell inside Burp, it gives it twenty-four functions, for example `get_proxy_http_history` and `send_http1_request`.
 
 This recipe wires three security tools into Muse Code as MCP servers, then runs each against a target with known bugs.
 
-- [Part one](#part-one---web-endpoints), Burp Suite. The agent reads proxy history, replays requests against PortSwigger’s vulnerable demo site, and builds proof for the lead it picks. You run this half yourself; the target publishes an answer key. Everything works on Burp Community.
+- [Part one](#part-one---web-endpoints), Burp Suite. The agent reads proxy history, replays requests against PortSwigger’s vulnerable demo site, and builds proof for the vulnerability it discovers. Everything works on Burp Community.
 - [Part two](#part-two---native-binaries), Ghidra and LLDB. The agent gets a stripped binary and a crashing input, and works back to the root cause of a real CVE in a JPEG 2000 decoder. The upstream patch is public, so you can check its work.
 
-Neither bug is new. The work is in correlation, proof, and write-up – the time-consuming parts of security work. All steps were run, not transcribed from docs.
+Neither bug is new. The work is in correlation, proof, and write-up – the time-consuming parts of security work. All steps were run, not transcribed from documentation.
 
 ## Setting Up Muse Code
 
@@ -39,11 +39,11 @@ $ muse --version
 Muse Code 1.1.1 (1.1.1-R2514.1)
 ```
 
-The installer puts the binary in `~/.local/bin` by default. Make sure that is on your `PATH`.
+The installer puts the binary in `~/.local/bin` by default, make sure that is on your `PATH`.
 
 ### Authenticate
 
-You need a Muse Code account. Sign-up and pricing are on the [product page](https://developer.meta.com/ai/products/muse-code/).
+You need a Muse Code account, sign-up and pricing are on the [product page](https://developer.meta.com/ai/products/muse-code/).
 
 Run `muse` in any project directory. First entry asks whether to trust the workspace, then offers browser sign-in or an API key.
 
@@ -94,11 +94,11 @@ Required MCP server `burp` failed during startup: initialization failed.
 Two notes before you add a security tool:
 
 - Set `mode: "optional"` on every tool-backed server. Burp is a GUI app you start by hand. On the default `required`, a missing Burp stops Muse Code in that project. `optional` degrades to a warning.
-- Servers load at startup. Edit `settings.json`, then start a new session. There is no reload.
+- Servers load at startup. Edit `settings.json`, then start a new session (there is no reload).
 
 ## Part One - Web Endpoints
 
-The agent gets a proxy it can read, a target it’s allowed to touch, and a bug it has to prove.
+The agent gets a proxy, an endpoint it’s allowed to query, and must prove the existence of a bug.
 
 ### Wiring Up Burp Suite
 
@@ -202,7 +202,9 @@ Complete `settings.json`. `command` points at the standalone JDK, not Burp’s b
 
 ### Verifying It End to End
 
-Start a session and ask the agent what it can see. There’s no `/mcp` slash command, so the check is a prompt:
+Start a session and run the `/mcp` slash command which will reveal the current state of all configured MCPs. You should only see the single Burp MCP connected at this point.
+
+Prompt the agent to list all available mcps tools as well to confirm the available tools.
 
 > **Prompt**
 >
@@ -281,7 +283,7 @@ for u in \
 done
 ```
 
-Nine requests, one redirect. That is the corpus.
+Nine requests and one redirect, that is our initial corpus.
 
 `-k` skips certificate validation because Burp presents its own CA. For scripted seeding this is fine. To browse through Burp in a normal browser, install Burp’s CA from `http://burp/cert` first.
 
@@ -311,7 +313,7 @@ The run behind this recipe picked one lead, confirmed it with three requests, an
 
 ## Part Two - Native Binaries
 
-Part two goes a layer down: a stripped binary, a crashing file, no source. Two more MCP servers – Ghidra for structure, LLDB for runtime values – pointed at a real CVE in a media decoder.
+Part two goes a layer down: targets a stripped binary, uses a crashing file, and (in theory) provides no source code. Two more MCP servers – Ghidra for structure, LLDB for runtime values – pointed at a real CVE in a media decoder.
 
 This half needs `cmake` and a C toolchain, `uv` for both MCP servers, and Rosetta to run x86_64 on Apple Silicon. On MacOS: `brew install cmake uv`, `xcode-select --install`, `softwareupdate --install-rosetta`.
 
@@ -350,7 +352,7 @@ uv venv --python 3.13 ~/lldb-mcp-venv
 VIRTUAL_ENV=~/lldb-mcp-venv uv pip install "mcp<2"
 ```
 
-And alongside it in the same block:
+Then add it to the `mcp_servers` block:
 
 ```
 "lldb": {
@@ -420,13 +422,13 @@ $ echo $?
 136
 ```
 
-Strip it for a reason. With `-g` and sources on disk, LLDB gives `pi.c:526` on the first backtrace – no reverse engineering needed. Stripped and optimized, symbol count drops from 736 to 55, and the fault reports as:
+Now we see that the binary was stripped for a reason. With `-g` and sources on disk, LLDB gives `pi.c:526` on the first backtrace – no reverse engineering needed. Stripped and optimized, symbol count drops from 736 to 55, and the fault reports as:
 
 ```
 frame #0: 0x0000000100030f06 decoder`___lldb_unnamed_symbol_100030230 + 3286
 ```
 
-No symbol name, line number, or source. The agent must work it out from the binary.
+With no symbol name, line number, or source, the agent must work it out from the binary.
 
 ### Verifying Both Servers
 
@@ -465,7 +467,7 @@ Same check as the web half, now with three servers. Complete `settings.json`:
 }
 ```
 
-Start a new session and run the tool-listing prompt from [Verifying It End to End](#verifying-it-end-to-end). Look for three groups: `mcp__ghidra.*`, `mcp__lldb.*`, and `mcp__burp.*`. A dead Ghidra bridge shows up here.
+Start a new session and run the tool-listing prompt from [Verifying It End to End](#verifying-it-end-to-end) or the `/mcp` slash command. Look for three groups: `mcp__ghidra.*`, `mcp__lldb.*`, and `mcp__burp.*`. A dead Ghidra bridge will show up here.
 
 ### Pointing It at the Binary
 
@@ -478,7 +480,7 @@ decoder, running on a machine I own — analysis is authorized.
 Binary (stripped: no source, no debug symbols, already imported into the Ghidra
 project): /path/to/decoder
 Input that makes it crash: /path/to/sample_crash_001.jp2
-Run it as: decoder -i <that file> -o /tmp/out.pgm
+Run it as: decoder -i /path/to/sample_crash_001.jp2 -o /tmp/out.pgm
 
 Work out the root cause and tell me:
 1. What the fault is at instruction level, and the exact operand values that produce it.
