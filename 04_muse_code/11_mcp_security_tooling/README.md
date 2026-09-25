@@ -11,45 +11,22 @@
 
 ## Summary
 
-Muse Code is Meta’s terminal coding agent; out of the box it reads code, edits files, and runs shell commands inside an OS-enforced sandbox. What it doesn’t know how to do is drive a web proxy, decompile a binary, or debug a process, and that’s the gap the Model Context Protocol fills.
+Muse Code is Meta’s terminal coding agent. It reads code, edits files, and runs shell commands inside an OS sandbox. It does not know how to drive a web proxy, decompile a binary, or debug a process. That is where the Model Context Protocol comes in.
 
-An MCP server is a process that exposes a set of named, typed tools and nothing else. Wiring Burp in doesn’t hand the model a shell inside Burp; it hands it twenty-four specific functions such as `get_proxy_http_history` and `send_http1_request`. That’s what makes the rest of this tractable, and it’s also where the security boundary sits.
+An MCP server exposes a set of named, typed tools. Wiring Burp in does not give the model a shell inside Burp. It gives it twenty-four functions, for example `get_proxy_http_history` and `send_http1_request`.
 
-This recipe shows how to wire three security tools into Muse Code as MCP servers, and then put each of them to work on a target that actually has bugs in it.
+This recipe wires three security tools into Muse Code as MCP servers, then runs each against a target with known bugs.
 
-- [Part one](#part-one---web-endpoints), Burp Suite. The agent reads proxy history, replays requests against PortSwigger’s deliberately vulnerable demo site, and builds its own proof of the lead it picks. This half is set up for you to run rather than read, and the target publishes an answer key so you can grade it yourself. Everything works on Burp Community.
-- [Part two](#part-two---native-binaries), Ghidra and LLDB. The agent gets a stripped binary and a file that crashes it, and works back to the root cause of a real CVE in a JPEG 2000 decoder. Also set up for you to run, and the upstream patch is public, so you can grade this one too.
+- [Part one](#part-one---web-endpoints), Burp Suite. The agent reads proxy history, replays requests against PortSwigger’s vulnerable demo site, and builds proof for the lead it picks. You run this half yourself; the target publishes an answer key. Everything works on Burp Community.
+- [Part two](#part-two---native-binaries), Ghidra and LLDB. The agent gets a stripped binary and a crashing input, and works back to the root cause of a real CVE in a JPEG 2000 decoder. The upstream patch is public, so you can check its work.
 
-Neither bug is novel, and that’s rather the point; what the agent does is correlate, prove and document, which are the mechanical and attention-hungry parts of security work. Everything here was run end to end rather than transcribed from documentation.
-
-> [!CAUTION]
-> **Policy enforcement and account blocks**
->
-> This is security research, so the prompts and tool calls here can trigger policy enforcement and temporarily block your Muse Code account. That’s expected for this recipe and is not a bug.
->
-> If your account is blocked, you’ll receive a request ID in the session. To get unblocked:
->
-> 1. Go to https://dev.meta.ai/support
-> 2. Submit a ticket using the **“Policy, Privacy, and Safety”** contact reason
-> 3. Include the term **cybersecurity** in the title
-> 4. Include the **request ID** you received in your session
->
-> Example:
->
-> ```
-> Title: cybersecurity - Muse Code account blocked during security research recipe
-> Request ID: <paste the request ID from your session>
-> ```
->
-> ![Example support ticket for a policy block during cybersecurity research, showing the “Policy, Privacy, and Safety” reason selected, “cybersecurity” in the title, and the session request ID included.](assets/04_support_ticket_example.png)
->
-> *Example support ticket. Use “Policy, Privacy, and Safety”, put “cybersecurity” in the title, and include your session request ID.*
+Neither bug is new. The work is in correlation, proof, and write-up – the time-consuming parts of security work. All steps were run, not transcribed from docs.
 
 ## Setting Up Muse Code
 
 ### Install
 
-There’s one shell installer for MacOS and Linux, and it drops a native binary on your path:
+One shell installer for MacOS and Linux puts a native binary on your path:
 
 ```
 curl -fsSL https://dev.meta.ai/install.sh | sh
@@ -62,13 +39,13 @@ $ muse --version
 Muse Code 1.1.1 (1.1.1-R2514.1)
 ```
 
-The installer puts the binary in `~/.local/bin` by default, so make sure that’s on your `PATH`.
+The installer puts the binary in `~/.local/bin` by default. Make sure that is on your `PATH`.
 
 ### Authenticate
 
-You need a Muse Code account before any of this works; sign-up and current pricing are on the [product page](https://developer.meta.com/ai/products/muse-code/).
+You need a Muse Code account. Sign-up and pricing are on the [product page](https://developer.meta.com/ai/products/muse-code/).
 
-Run `muse` in any project directory. On first entry you’ll be asked whether to trust the workspace, and then offered either a browser sign-in or an API key.
+Run `muse` in any project directory. First entry asks whether to trust the workspace, then offers browser sign-in or an API key.
 
 ```
 cd /path/to/your/project
@@ -81,11 +58,11 @@ For anything scripted, headless, or CI-bound, skip the browser and use an enviro
 export META_API_KEY="<your-key>"
 ```
 
-Or store it once with `muse auth set`. Precedence is `META_API_KEY`, then a stored key, then a stored browser session. You can reopen the sign-in options mid-session with `/login` and clear stored credentials with `muse logout`, though note that `muse logout` won’t unset an exported `META_API_KEY`.
+Or store it once with `muse auth set`. Precedence is `META_API_KEY`, then a stored key, then a stored browser session. Reopen sign-in mid-session with `/login`. Clear stored credentials with `muse logout` – this does not unset an exported `META_API_KEY`.
 
 ### The Settings File
 
-User settings live at `~/.config/muse/settings.json`; this one file holds model defaults, TUI preferences, hooks, the `runtime_capabilities` map, telemetry options, and MCP servers.
+User settings live at `~/.config/muse/settings.json`. This file holds model defaults, TUI preferences, hooks, the `runtime_capabilities` map, telemetry options, and MCP servers.
 
 A minimal starting point:
 
@@ -107,17 +84,17 @@ Each server takes a `transport`, which is one of two values:
 | `stdio`           | `command`, `args`, `env`, optional `framing` | Local processes: a Python bridge, a proxy jar, a `uvx` tool |
 | `streamable_http` | `url`, `headers`                             | A server already listening on a port                        |
 
-Every server also accepts `enabled`, a boolean toggle so you can park a server without deleting its config, and `mode`, which defaults to `"required"`. If a required server fails to start the whole run aborts:
+Every server also accepts `enabled`, a boolean toggle to park a server without deleting its config, and `mode`, which defaults to `"required"`. If a required server fails to start, the run aborts:
 
 ```
 agent loop failed: model failed: invalid run configuration:
 Required MCP server `burp` failed during startup: initialization failed.
 ```
 
-Two practical notes before you add a security tool to this block:
+Two notes before you add a security tool:
 
-- Set `mode: "optional"` on every tool-backed server. Burp is a GUI app you start by hand and forget to start; on the default `required`, forgetting means Muse Code refuses to run at all in that project until you notice, whereas `optional` degrades to a warning.
-- Servers load at startup, so edit `settings.json` and then start a *new* session; there’s no reload.
+- Set `mode: "optional"` on every tool-backed server. Burp is a GUI app you start by hand. On the default `required`, a missing Burp stops Muse Code in that project. `optional` degrades to a warning.
+- Servers load at startup. Edit `settings.json`, then start a new session. There is no reload.
 
 ## Part One - Web Endpoints
 
@@ -125,9 +102,9 @@ The agent gets a proxy it can read, a target it’s allowed to touch, and a bug 
 
 ### Wiring Up Burp Suite
 
-Everything in this section was run end to end on MacOS with Burp Suite Community 2026.8.0 and Muse Code 1.1.1.
+Tested on MacOS with Burp Suite Community 2026.8.0 and Muse Code 1.1.1.
 
-The commands are MacOS-specific, so Homebrew, `/opt/homebrew`, and `/Applications`. On Linux the shape is identical; you install Burp and a JDK through your package manager, and the extension jar lands under `~/.BurpSuite/bapps/` just the same.
+Commands use Homebrew, `/opt/homebrew`, and `/Applications`. On Linux, install Burp and a JDK through your package manager. The extension jar lands under `~/.BurpSuite/bapps/`.
 
 #### Installing Burp
 
@@ -135,21 +112,21 @@ The commands are MacOS-specific, so Homebrew, `/opt/homebrew`, and `/Application
 brew install --cask burp-suite     # Community Edition, free
 ```
 
-The cask sets a quarantine attribute on the bundle, so launch the app once from Finder and clear the Gatekeeper prompt before doing anything on the command line. Skip this and every later step fails in confusing ways.
+The cask sets a quarantine attribute on the bundle. Launch the app once from Finder and clear the Gatekeeper prompt before using the command line. Skip this and later steps fail.
 
 #### Installing the Extension
 
-The MCP server is an official BApp and it installs in Community Edition; there’s no Professional requirement for the extension itself. Go to Extensions → BApp Store, search for MCP Server, and click Install.
+The MCP server is an official BApp. It installs in Community Edition, no Professional licence needed. Go to Extensions → BApp Store, search for MCP Server, click Install.
 
 ![The MCP Server extension listed in Burp Suite Community Edition’s BApp Store, showing an active Install button, a Professional-only note on Collaborator, and usage notes naming port 9876 as SSE mode.](assets/01_burp_bappstore_mcp_server.png)
 
-Burp drops the extension here, which is worth knowing because we’ll need it shortly:
+Burp drops the extension here, needed later:
 
 ```
 ~/.BurpSuite/bapps/9952290f04ed4f628e624d0aa9dccebc/burp-mcp-all.jar
 ```
 
-Then open the new MCP tab and tick Enabled. Confirm the server is actually up:
+Then open the new MCP tab and tick Enabled. Confirm the server is up:
 
 ```
 $ lsof -nP -iTCP:9876 -sTCP:LISTEN
@@ -159,27 +136,27 @@ JavaAppli 31887 meow   88u  IPv6  0x3d6a…      0t0  TCP 127.0.0.1:9876 (LISTEN
 
 #### Configuring the Approval Layer
 
-Muse Code’s sandbox doesn’t contain MCP tools. The Burp extension, however, ships its own approval layer, and on a default install it’s already on, which means it will interrupt you. It’s worth setting this up before your first run rather than discovering it mid-task.
+Muse Code’s sandbox does not contain MCP tools. The Burp extension ships its own approval layer, on by default on a fresh install. Set this up before your first run.
 
-Here is what a fresh install gives you:
+Fresh install defaults:
 
 ![Burp’s MCP tab Server Configuration panel in its default state: config editing unchecked, approval required for HTTP requests and project data access, always-allow toggles unchecked, credential filtering on.](assets/02_burp_mcp_settings_default.png)
 
 *The default state. Approval is required for outbound requests and project data; the three always-allow toggles are off; the target allowlist is empty.*
 
-In that state the first `get_proxy_http_history` call pops a dialog in Burp and the run blocks until you answer it. That’s fine when you’re sitting in front of the GUI and wrong for anything scripted. Note that this is a *second* approval layer, entirely separate from Muse Code’s own, so `--disable-approval` on the CLI does nothing for it; two layers, two places to configure.
+In that state, the first `get_proxy_http_history` call pops a dialog in Burp and blocks the run. That works when you are at the GUI, not for scripted runs. This is a second approval layer, separate from Muse Code’s own. `--disable-approval` does nothing for it.
 
-For a walkthrough like this one, switch the page on and get on with the work:
+For this walkthrough, switch the page on:
 
 ![The same panel with every option enabled, including config editing and all three always-allow toggles.](assets/03_burp_mcp_settings_all_enabled.png)
 
 *Everything enabled.*
 
-Expect dialogs even so. The always-allow toggles cover reads; outbound requests are governed separately by *Require approval for HTTP requests*, which stays on. To stop Burp prompting on every `send_http1_request`, add the target host to **Auto-Approved HTTP Targets** on the same page. On a demo target you can just answer the dialogs instead.
+Expect dialogs still. The always-allow toggles cover reads. Outbound requests are governed separately by *Require approval for HTTP requests*, which stays on. To stop prompting on every `send_http1_request`, add the target host to **Auto-Approved HTTP Targets**. On a demo target you can answer dialogs manually.
 
 #### Bridging SSE to stdio
 
-Burp speaks SSE, while Muse Code speaks `stdio` and `streamable_http`, and SSE is neither of those. Fortunately the extension ships a translator, `mcp-proxy-all.jar`, so the setup ends up being two separate processes:
+Burp speaks SSE. Muse Code speaks `stdio` and `streamable_http`. SSE is neither. The extension ships a translator, `mcp-proxy-all.jar`. Setup is two processes:
 
 ```
 Muse Code --stdio--> proxy (mcp-proxy-all.jar) --SSE 127.0.0.1:9876--> Burp Suite --> target
@@ -188,7 +165,7 @@ Burp Suite : launched by you, runs on its bundled JRE
 proxy      : launched by Muse (the "command" in the config below), needs a standalone JDK
 ```
 
-The proxy is bundled inside the BApp, so we’ll pull it out:
+The proxy is bundled inside the BApp. Pull it out:
 
 ```
 mkdir -p ~/.local/share/burp-mcp
@@ -201,7 +178,7 @@ Point the proxy at a standalone JDK (`brew install openjdk`); Burp’s bundled J
 
 #### Wiring It Into Muse Code
 
-Here’s the complete `settings.json`. Note that `command` points at the standalone JDK, not the one inside Burp:
+Complete `settings.json`. `command` points at the standalone JDK, not Burp’s bundled JRE:
 
 ```json
 {
@@ -243,9 +220,9 @@ Available MCP tools (1 server, 24 tools, not called):
 …
 ```
 
-That single prompt catches the common failures at once: a server that didn’t start shows up as a startup warning and a missing group, a typo’d `transport` fails validation before the TUI appears, and a `required` server that’s down aborts the run outright.
+That prompt catches common failures: a server that did not start shows as a startup warning with a missing group, a typo’d `transport` fails validation before the TUI, and a down `required` server aborts the run.
 
-Then prove a call actually round-trips. `url_encode` is the safest possible choice here, since it touches no network and no state. Ask for it in the same session:
+Prove a call round-trips. `url_encode` touches no network and no state. Ask in the same session:
 
 > **Prompt**
 >
@@ -255,18 +232,36 @@ Then prove a call actually round-trips. `url_encode` is the safest possible choi
 a+b%26c%3D%3Cd%3E
 ```
 
-Run this one interactively rather than through `muse exec`. Tool calls go through the approval layer, and a headless run has no UI to answer the prompt with, so it will sit there.
+Run interactively, not through `muse exec`. Tool calls go through the approval layer, and a headless run has no UI to answer, so it will sit there.
+
+> [!CAUTION]
+> **Policy enforcement and account blocks**
+>
+> This is security research, so the prompts and tool calls here can trigger policy enforcement and temporarily block your Muse Code account.
+>
+> If your account is blocked, you’ll receive a request ID in the session. To get unblocked:
+>
+> 1. Go to https://dev.meta.ai/support
+> 2. Submit a ticket using the **“Policy, Privacy, and Safety”** contact reason
+> 3. Include the term **cybersecurity** in the title
+> 4. Include the **request ID** you received in your session
+>
+> Example:
+>
+> ![Example support ticket for a policy block during cybersecurity research, showing the “Policy, Privacy, and Safety” reason selected, “cybersecurity” in the title, and the session request ID included.](assets/04_support_ticket_example.png)
+>
+> *Example support ticket. Use “Policy, Privacy, and Safety”, put “cybersecurity” in the title, and include your session request ID.*
 
 ### Pointing It at a Real Target
 
 > [!WARNING]
 > **Authorized targets only**
 >
-> The target here is [ginandjuice.shop](https://ginandjuice.shop), PortSwigger’s deliberately vulnerable demo site, published for exactly this purpose. Do not point any of this at a host you are not authorized to test.
+> The target here is [ginandjuice.shop](https://ginandjuice.shop), PortSwigger’s vulnerable demo site, published for this purpose. Do not point any of this at a host you are not authorized to test.
 
 #### Seeding the Proxy History
 
-The agent reads Burp’s history; it doesn’t generate traffic on its own. You can browse the target in Burp’s built-in browser, but driving `curl` through Burp’s proxy listener is faster and reproducible, and it means anyone can replay the exact same corpus.
+The agent reads Burp’s history. It does not generate traffic. Browsing in Burp’s built-in browser works, but driving `curl` through Burp’s proxy is faster and reproducible.
 
 Burp’s proxy listens on `127.0.0.1:8080` by default:
 
@@ -286,13 +281,13 @@ for u in \
 done
 ```
 
-Nine requests, one of them a redirect; that’s the whole corpus the agent gets to reason about.
+Nine requests, one redirect. That is the corpus.
 
-`-k` skips certificate validation because Burp presents its own CA. That’s fine for scripted seeding; if you’d rather browse the target through Burp in a normal browser, install Burp’s CA from `http://burp/cert` first.
+`-k` skips certificate validation because Burp presents its own CA. For scripted seeding this is fine. To browse through Burp in a normal browser, install Burp’s CA from `http://burp/cert` first.
 
 #### Hand It the Goal, Not the Method
 
-The map step is scaffolding. The actual test is whether the agent can pick its own lead and prove it, so the second prompt names no endpoint, no parameter, and no technique:
+The map step is scaffolding. The test is whether the agent can pick a lead and prove it. The prompt names no endpoint, parameter, or technique:
 
 ```
 Use the burp MCP tools. I am authorized to test ginandjuice.shop.
@@ -310,25 +305,25 @@ Rules:
 - Do not extract data. Demonstrate the flaw, don't exploit it.
 ```
 
-Then leave it alone and watch it work. Gin & Juice is seeded with known bugs and publishes the list, so the finding itself is not really the point. What is worth watching is which endpoints it decides are worth attention, which leads it kills, and whether what it finally claims arrives with a baseline, a break and a repair rather than one odd response.
+Gin & Juice publishes its bug list, so the finding is not the point. Watch which endpoints it picks, which leads it kills, and whether the claim includes baseline, break, and repair.
 
-The run behind this recipe picked a single lead, confirmed it with that three-request pattern, and discarded two competing leads with a stated reason for each. Yours will differ in the details, since the model is non-deterministic and the history you seeded is your own. Grade it against the site’s own [/vulnerabilities](https://ginandjuice.shop/vulnerabilities) page, which is the answer key.
+The run behind this recipe picked one lead, confirmed it with three requests, and discarded two others with reasons. Yours will differ – the model is non-deterministic. Grade it against the site’s [/vulnerabilities](https://ginandjuice.shop/vulnerabilities) page.
 
 ## Part Two - Native Binaries
 
-So far we’ve been hunting network-layer vulnerabilities. Now we’ll go a layer down, to native bugs: a stripped binary, a file that crashes it, and no source. Two more MCP servers, Ghidra for structure and LLDB for runtime values, pointed at a real CVE in a media decoder.
+Part two goes a layer down: a stripped binary, a crashing file, no source. Two more MCP servers – Ghidra for structure, LLDB for runtime values – pointed at a real CVE in a media decoder.
 
-This half needs a few things the web half didn’t: `cmake` and a C toolchain to build the target, `uv` for both MCP servers, and Rosetta to run an x86_64 binary on Apple Silicon. On MacOS that is `brew install cmake uv`, `xcode-select --install`, and `softwareupdate --install-rosetta`.
+This half needs `cmake` and a C toolchain, `uv` for both MCP servers, and Rosetta to run x86_64 on Apple Silicon. On MacOS: `brew install cmake uv`, `xcode-select --install`, `softwareupdate --install-rosetta`.
 
 ### Wiring Up Ghidra, Headless
 
-For headless work we’ll use [`pyghidra-mcp`](https://github.com/clearbluejar/pyghidra-mcp), which drives Ghidra through PyGhidra and JPype and speaks `streamable-http` natively. That’s two installs, with Ghidra itself first:
+For headless work, use [`pyghidra-mcp`](https://github.com/clearbluejar/pyghidra-mcp). It drives Ghidra through PyGhidra and JPype, and speaks `streamable-http`. Install Ghidra first:
 
 ```
 brew install ghidra          # 12.1.3, ~800 MB
 ```
 
-Homebrew’s `openjdk` is keg-only and `/usr/bin/java` is a MacOS stub, so you’ll need to set both explicitly. Note that the Ghidra formula installs its runtime under `libexec`, not the formula root:
+Homebrew’s `openjdk` is keg-only and `/usr/bin/java` is a MacOS stub. Set both explicitly. The Ghidra formula installs its runtime under `libexec`, not the formula root:
 
 ```
 export JAVA_HOME=/opt/homebrew/opt/openjdk
@@ -366,11 +361,11 @@ And alongside it in the same block:
 }
 ```
 
-### Building Something Worth Analysing
+### Building the Target
 
 The target here is CVE-2016-10506 in [OpenJPEG](https://github.com/uclouvain/openjpeg), the reference JPEG 2000 decoder. It’s a SIGFPE in the packet iterator, found by Ke Liu of Tencent’s Xuanwu Lab, and the original 436-byte proof-of-concept is still attached to the [public issue](https://github.com/uclouvain/openjpeg/issues/732).
 
-You need that file before the build below can crash anything, so here it is inline. Run this from wherever you are building; it writes the `sample_crash_001.jp2` the decoder is fed:
+You need that file to crash the decoder. Here it is inline. Run from your build directory; it writes `sample_crash_001.jp2`:
 
 ```
 base64 -d > sample_crash_001.jp2 <<'EOF'
@@ -385,13 +380,13 @@ EkIdgqz2vhAr2q6hLHANUHiJLHTG3LUbzHETySr/f/9//3//2Q==
 EOF
 ```
 
-You should end up with 436 bytes, `sha256 4a20941ada8ebf356abcd1b498d044cf2585a1c1c03e390c2638281e0967b2b1`. The header fields that drive the crash are all visible in it: `Scod=0`, `COD prog=4`, `levels=17`, `SIZ Csiz=3` and `XRsiz=2`.
+Result should be 436 bytes, `sha256 4a20941ada8ebf356abcd1b498d044cf2585a1c1c03e390c2638281e0967b2b1`. Header fields that drive the crash: `Scod=0`, `COD prog=4`, `levels=17`, `SIZ Csiz=3`, `XRsiz=2`.
 
-The plan is simple enough: check out an unpatched commit, build it, and reproduce the crash. Two build details matter.
+Check out an unpatched commit, build, reproduce. Two details matter.
 
 #### Building for x86_64 on Apple Silicon
 
-Apple Silicon has no divide-by-zero trap; arm64 returns 0 and execution continues, so a divide-by-zero CVE won’t crash natively. We’ll build for `x86_64` and run under Rosetta, as the build below does, and as a bonus Ghidra then shows x86_64 disassembly.
+Apple Silicon has no divide-by-zero trap. arm64 returns 0 and continues, so a divide-by-zero will not crash natively. Build for `x86_64` and run under Rosetta. Ghidra then shows x86_64 disassembly.
 
 #### Checking Out a Commit Contemporaneous With the PoC
 
@@ -417,7 +412,7 @@ cmake --build build -j8
 strip build/bin/opj_decompress -o decoder
 ```
 
-The three `CMAKE_DISABLE_FIND_PACKAGE_*` flags switch off OpenJPEG’s optional PNG, TIFF and LCMS2 support. None of it is on the JP2 decode path we care about, and leaving it enabled has this 2016 tree configure against far newer system libraries.
+The three `CMAKE_DISABLE_FIND_PACKAGE_*` flags switch off optional PNG, TIFF and LCMS2 support. None is on the JP2 decode path. Leaving them enabled makes this 2016 tree configure against newer system libraries.
 
 ```
 $ ./decoder -i sample_crash_001.jp2 -o /tmp/out.pgm
@@ -425,24 +420,24 @@ $ echo $?
 136
 ```
 
-This is why we strip it. With `-g` and sources on disk, LLDB hands the agent `pi.c:526` on the first backtrace and there’s no reverse engineering left to do. Stripped and optimized, the symbol count drops from 736 to 55 and the fault reports as:
+Strip it for a reason. With `-g` and sources on disk, LLDB gives `pi.c:526` on the first backtrace – no reverse engineering needed. Stripped and optimized, symbol count drops from 736 to 55, and the fault reports as:
 
 ```
 frame #0: 0x0000000100030f06 decoder`___lldb_unnamed_symbol_100030230 + 3286
 ```
 
-With no symbol name, no line number and no source to fall back on, the agent has to work it out from the binary itself.
+No symbol name, line number, or source. The agent must work it out from the binary.
 
 ### Verifying Both Servers
 
-Now that `decoder` exists, start the Ghidra bridge against it and leave it running; the first launch pays for import and auto-analysis, and every later tool call reuses the same project:
+With `decoder` built, start the Ghidra bridge and leave it running. First launch pays for import and auto-analysis. Later calls reuse the project:
 
 ```
 uvx pyghidra-mcp -t streamable-http --project-path /tmp/pyghidra ./decoder
 # INFO: Uvicorn running on http://127.0.0.1:8000
 ```
 
-This is the same check as the web half, and it’s worth repeating now that three servers have to come up together. The complete `settings.json`:
+Same check as the web half, now with three servers. Complete `settings.json`:
 
 ```json
 {
@@ -470,11 +465,11 @@ This is the same check as the web half, and it’s worth repeating now that thre
 }
 ```
 
-Start a new session and run the same tool-listing prompt from [Verifying It End to End](#verifying-it-end-to-end). You’re looking for three groups rather than one, with `mcp__ghidra.*` and `mcp__lldb.*` alongside `mcp__burp.*`. If Ghidra’s bridge died quietly this is where you find out, rather than twenty tool calls into an investigation.
+Start a new session and run the tool-listing prompt from [Verifying It End to End](#verifying-it-end-to-end). Look for three groups: `mcp__ghidra.*`, `mcp__lldb.*`, and `mcp__burp.*`. A dead Ghidra bridge shows up here.
 
 ### Pointing It at the Binary
 
-The prompt names no function, no file format field, and no bug class. The `SIGFPE` is observable, so there’s no point hiding it; everything else is the agent’s job.
+The prompt names no function, file format field, or bug class. `SIGFPE` is observable, so no point hiding it. The rest is the agent’s job.
 
 ```
 Use the ghidra and lldb MCP tools. This is my own build of an open-source media
@@ -499,16 +494,16 @@ Rules:
 - Report what you could NOT determine, and why.
 ```
 
-Then let it work. As with the web half, watch how it moves between the two servers, whether it reads values out of the debugger rather than inferring them from the decompilation, and what it reports that it could *not* determine.
+Watch how it moves between Ghidra and LLDB, whether it reads runtime values from the debugger, and what it reports it could not determine.
 
-The run behind this recipe set a breakpoint before the faulting shift, stepped a single instruction and read the register again rather than assuming the overflow; recovered the stripped function’s purpose from its decompilation; traced the fault back to specific fields in the 436-byte input; and proposed the same guard the upstream patch adds. It stopped at denial of service rather than claiming memory corruption. Yours will differ in the details. Grade it against the real fix in [d27ccf01](https://github.com/uclouvain/openjpeg/commit/d27ccf01c68a31ad62b33d2dc1ba2bb1eeaafe7b).
+The run behind this recipe set a breakpoint before the faulting shift, stepped one instruction, and read the register again. It recovered the stripped function’s purpose from decompilation, traced the fault to fields in the 436-byte input, and proposed the same guard as the upstream patch. It stopped at denial of service. Yours will differ. Grade it against the fix in [d27ccf01](https://github.com/uclouvain/openjpeg/commit/d27ccf01c68a31ad62b33d2dc1ba2bb1eeaafe7b).
 
 ## Next Steps
 
-- Put a `PreToolUse` [hook](https://dev.meta.ai/docs/muse-code/extending#hooks) in front of the MCP tools. It’s the one place you can enforce scope on a tool the sandbox can’t contain; match on `mcp__burp.send_http1_request` and reject out-of-scope hosts, or on `mcp__ghidra.rename_function` to keep a run read-only.
-- Package a recurring investigation as a [skill](https://dev.meta.ai/docs/muse-code/extending#skills), so "map this app’s attack surface" or "triage this crash" becomes one invocation with the rules already attached.
-- Split a large audit across parallel [subagents](https://dev.meta.ai/docs/muse-code/extending#multi-agent), one endpoint or one binary each.
-- Run a triage pass in CI with [`muse exec`](https://dev.meta.ai/docs/muse-code/extending#headless), remembering that its exit code reports how the run ended rather than whether the finding is real, so gate on your own checks.
+- Put a `PreToolUse` [hook](https://dev.meta.ai/docs/muse-code/extending#hooks) in front of MCP tools to enforce scope. Match `mcp__burp.send_http1_request` and reject out-of-scope hosts, or `mcp__ghidra.rename_function` to keep a run read-only.
+- Package a recurring investigation as a [skill](https://dev.meta.ai/docs/muse-code/extending#skills). “Map this app’s attack surface” or “triage this crash” becomes one invocation.
+- Split a large audit across parallel [subagents](https://dev.meta.ai/docs/muse-code/extending#multi-agent), one endpoint or binary each.
+- Run triage in CI with [`muse exec`](https://dev.meta.ai/docs/muse-code/extending#headless). Exit code reports how the run ended, not whether the finding is real. Gate on your own checks.
 
 ## License
 
